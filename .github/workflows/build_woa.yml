@@ -65,10 +65,9 @@ jobs:
           path: |
             deps-destdir
             deps/build
-          key: woa-deps-v3-${{ hashFiles('deps/**/*.cmake', 'deps/CMakeLists.txt', 'cmake/modules/AddCMakeProject.cmake') }}
+          key: woa-deps-v4-${{ hashFiles('deps/**/*.cmake', 'deps/CMakeLists.txt', 'cmake/modules/AddCMakeProject.cmake') }}
           restore-keys: |
-            woa-deps-v3-
-            woa-deps-v2-
+            woa-deps-v4-
 
       - name: Configure deps
         shell: cmd
@@ -98,8 +97,8 @@ jobs:
           call "%VSROOT%\Common7\Tools\vsdevcmd.bat" -arch=arm64 -host_arch=arm64 -app_platform=Desktop || exit /b 1
 
           cd deps\build
-          REM Continue past failures so we can capture all errors in one run.
-          msbuild /m:4 /p:Configuration=RelWithDebInfo /p:Platform=ARM64 /v:minimal /nologo /clp:Summary;ErrorsOnly;WarningsOnly ALL_BUILD.vcxproj
+          REM Use normal verbosity so cmake stdout from ExternalProject configure surfaces.
+          msbuild /m:4 /p:Configuration=RelWithDebInfo /p:Platform=ARM64 /v:normal /nologo ALL_BUILD.vcxproj
           set BUILD_RC=%ERRORLEVEL%
           echo MSBUILD-RC=%BUILD_RC%
           REM Always exit 0 here so artifact upload happens; the next step will set final status.
@@ -168,7 +167,7 @@ jobs:
           path: |
             deps-destdir
             deps/build
-          key: woa-deps-v3-${{ hashFiles('deps/**/*.cmake', 'deps/CMakeLists.txt', 'cmake/modules/AddCMakeProject.cmake') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: woa-deps-v4-${{ hashFiles('deps/**/*.cmake', 'deps/CMakeLists.txt', 'cmake/modules/AddCMakeProject.cmake') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Collect logs
         if: always()
