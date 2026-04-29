@@ -249,6 +249,22 @@ jobs:
       # App build (PrusaSlicer itself), reusing the deps we just built.
       # ------------------------------------------------------------------
 
+      - name: Mirror wxWidgets headers (idempotent)
+        if: success()
+        shell: pwsh
+        run: |
+          # Belt-and-suspenders for the wxWidgets POST_BUILD copy: if the wx
+          # install came from a prior cache without the mirrored layout, do it
+          # here so PrusaSlicer's FindwxWidgets module can locate include/wx/wx.h.
+          $src = "$env:DEPS_DESTDIR\usr\local\include\wx-3.2"
+          $dst = "$env:DEPS_DESTDIR\usr\local\include"
+          if ((Test-Path $src) -and (-not (Test-Path "$dst\wx\wx.h"))) {
+            Copy-Item -Recurse -Force "$src\*" $dst
+            Write-Host "Mirrored wx-3.2/* -> include/"
+          } else {
+            Write-Host "No mirror needed (already present or wx-3.2 missing)"
+          }
+
       - name: Restore app-build cache
         if: success()
         id: app-cache-restore
