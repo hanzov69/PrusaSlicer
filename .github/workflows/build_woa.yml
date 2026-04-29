@@ -39,6 +39,8 @@ jobs:
     timeout-minutes: 350
     env:
       DEPS_DESTDIR: ${{ github.workspace }}\deps-destdir
+      CMAKE_GENERATOR: Visual Studio 17 2022
+      CMAKE_GENERATOR_PLATFORM: ARM64
       CMAKE_BUILD_PARALLEL_LEVEL: 4
 
     steps:
@@ -54,8 +56,9 @@ jobs:
           Write-Host "=== Architecture ==="
           Write-Host "PROCESSOR_ARCHITECTURE=$env:PROCESSOR_ARCHITECTURE"
           Write-Host "PROCESSOR_IDENTIFIER=$env:PROCESSOR_IDENTIFIER"
-          Write-Host "OS Build:"
           (Get-CimInstance Win32_OperatingSystem) | Select Caption,Version,OSArchitecture | Format-List
+          Write-Host "CMAKE_GENERATOR=$env:CMAKE_GENERATOR"
+          Write-Host "CMAKE_GENERATOR_PLATFORM=$env:CMAKE_GENERATOR_PLATFORM"
 
           Write-Host "=== CMake ==="
           (Get-Command cmake -ErrorAction SilentlyContinue).Source
@@ -67,9 +70,9 @@ jobs:
           if (Test-Path $vswhere) {
             & $vswhere -nologo -all -products * -property installationPath
             & $vswhere -nologo -all -products * -property catalog_productLineVersion
-            Write-Host "--- Components ---"
             $vsroot = & $vswhere -nologo -latest -property installationPath
             if ($vsroot) {
+              Write-Host "--- Tools dirs ---"
               Get-ChildItem "$vsroot\VC\Tools\MSVC" -ErrorAction SilentlyContinue | Select-Object Name
               Write-Host "--- ARM64 cl present? ---"
               Get-ChildItem -Recurse -Filter cl.exe "$vsroot\VC\Tools\MSVC" -ErrorAction SilentlyContinue |
@@ -80,7 +83,7 @@ jobs:
           }
 
           Write-Host "=== Tools ==="
-          foreach ($t in @('git','cmake','ninja','perl','python','strawberry','nasm','yasm','msys2','7z')) {
+          foreach ($t in @('git','cmake','ninja','perl','python','strawberry','nasm','yasm','msys2','7z','vcpkg')) {
             $c = Get-Command $t -ErrorAction SilentlyContinue
             if ($c) { Write-Host "$t -> $($c.Source)" } else { Write-Host "$t -> (missing)" }
           }
@@ -89,45 +92,60 @@ jobs:
           Get-PSDrive -PSProvider FileSystem | Format-Table Name,@{n='Free(GB)';e={[math]::Round($_.Free/1GB,1)}},@{n='Used(GB)';e={[math]::Round($_.Used/1GB,1)}}
 
       - name: Restore deps cache
-        id: deps-cache
+        id: deps-cache-restore
         if: ${{ !inputs.reset_cache }}
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: |
             deps-destdir
             deps/build
-          key: woa-deps-v1-${{ hashFiles('deps/**/*.cmake', 'deps/CMakeLists.txt', 'cmake/modules/AddCMakeProject.cmake') }}
+          key: woa-deps-v2-${{ hashFiles('deps/**/*.cmake', 'deps/CMakeLists.txt', 'cmake/modules/AddCMakeProject.cmake', '.github/workflows/build_woa.yml') }}
           restore-keys: |
-            woa-deps-v1-
+            woa-deps-v2-
 
       - name: Build deps (build_win.bat)
         shell: cmd
         run: |
           @echo on
           set PS_ECHO_ON=1
+          REM Force ARM64 platform for all CMake invocations (parent + ExternalProject children)
+          set CMAKE_GENERATOR_PLATFORM=ARM64
+          set CMAKE_GENERATOR=Visual Studio 17 2022
           call build_win.bat -ARCH arm64 -CONFIG RelWithDebInfo -DESTDIR "%DEPS_DESTDIR%" -STEPS ${{ inputs.steps || 'deps' }}
+
+      - name: Save deps cache (always, even on failure)
+        if: always() && !cancelled()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            deps-destdir
+            deps/build
+          key: woa-deps-v2-${{ hashFiles('deps/**/*.cmake', 'deps/CMakeLists.txt', 'cmake/modules/AddCMakeProject.cmake', '.github/workflows/build_woa.yml') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Collect logs
         if: always()
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path artifacts/logs | Out-Null
-          # Top-level CMake / build logs
           $patterns = @(
-            'deps/build/CMakeFiles/*.log',
+            'deps/build/CMakeFiles/CMakeOutput.log',
+            'deps/build/CMakeFiles/CMakeError.log',
             'deps/build/CMakeCache.txt',
             'deps/build/dep_*-prefix/src/dep_*-stamp/*.log',
-            'deps/build/**/*.log'
+            'deps/build/dep_*-prefix/src/dep_*-build/CMakeFiles/CMakeError.log',
+            'deps/build/dep_*-prefix/src/dep_*-build/CMakeFiles/CMakeOutput.log',
+            'deps/build/builds/*/CMakeFiles/CMakeError.log',
+            'deps/build/builds/*/CMakeFiles/CMakeOutput.log'
           )
           foreach ($p in $patterns) {
             Get-ChildItem -Path $p -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
-              $rel = Resolve-Path -Relative $_.FullName
+              $rel = (Resolve-Path -Relative $_.FullName) -replace '^\.[\\/]',''
               $dest = Join-Path 'artifacts/logs' ($rel -replace '[\\/:]','_')
               Copy-Item $_.FullName $dest -ErrorAction SilentlyContinue
             }
           }
-          Write-Host "Collected log count:"
-          (Get-ChildItem artifacts/logs -ErrorAction SilentlyContinue | Measure-Object).Count
+          Write-Host "Collected:"
+          Get-ChildItem artifacts/logs -ErrorAction SilentlyContinue | Format-Table Name,Length
 
       - name: Upload logs
         if: always()
@@ -138,7 +156,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Upload deps destdir (on success only)
+      - name: Upload deps destdir (success only)
         if: success() && (inputs.steps == 'deps' || inputs.steps == 'deps-dirty' || inputs.steps == '')
         uses: actions/upload-artifact@v4
         with:
