@@ -82,5 +82,14 @@ if (MSVC)
             COMMAND ${CMAKE_COMMAND} -E copy
             "${CMAKE_CURRENT_BINARY_DIR}/builds/wxWidgets/lib/${_wx_lib_subdir}/WebView2Loader.dll"
             "${${PROJECT_NAME}_DEP_INSTALL_PREFIX}/bin/WebView2Loader.dll")
+
+    # wxWidgets's CMake install layout puts headers under include/wx-3.2/wx/.
+    # PrusaSlicer's bundled FindwxWidgets module (a copy of CMake's stock
+    # FindwxWidgets) expects the dev-tree layout include/wx/wx.h, so mirror the
+    # versioned subtree into the unversioned location as a post-install step.
+    add_custom_command(TARGET dep_wxWidgets POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${${PROJECT_NAME}_DEP_INSTALL_PREFIX}/include/wx-3.2"
+            "${${PROJECT_NAME}_DEP_INSTALL_PREFIX}/include")
 endif()
 
