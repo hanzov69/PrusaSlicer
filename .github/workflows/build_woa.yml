@@ -95,7 +95,9 @@ jobs:
           # GLEW fork swap), CMake's per-build CMakeCache.txt records the old
           # source path and refuses to reconfigure. Force-clean those subtrees
           # so ExternalProject re-fetches and re-configures from scratch.
-          $scrub = @('Boost','EXPAT','GLEW','LibBGCode','OpenCSG','wxWidgets')
+          # Empty unless a dep's source layout/URL just changed and its build dir
+          # holds a stale CMakeCache that would refuse to reconfigure.
+          $scrub = @()
           foreach ($d in $scrub) {
             foreach ($p in @("deps/build/dep_${d}-prefix", "deps/build/builds/$d", "deps/build/dep_${d}.dir")) {
               if (Test-Path $p) {
@@ -131,6 +133,7 @@ jobs:
           type CMakeCache.txt | findstr /R "PrusaSlicer_deps_PACKAGE_EXCLUDES CMAKE_GENERATOR_PLATFORM CMAKE_VS_PLATFORM_NAME"
 
       - name: Build deps
+        id: build-deps
         shell: cmd
         run: |
           @echo on
@@ -143,6 +146,7 @@ jobs:
           msbuild /m:4 /p:Configuration=RelWithDebInfo /p:Platform=ARM64 /v:normal /nologo ALL_BUILD.vcxproj
           set BUILD_RC=%ERRORLEVEL%
           echo MSBUILD-RC=%BUILD_RC%
+          echo build_rc=%BUILD_RC%>>%GITHUB_OUTPUT%
           REM Always exit 0 here so artifact upload happens; the next step will set final status.
           exit /b 0
 
@@ -181,28 +185,12 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          # Re-evaluate by checking that all NON-EXCLUDED deps installed.
-          # OpenSSL is intentionally not built on Windows (CURL uses Schannel),
-          # so omit it from the required list regardless of EXCLUDES input.
-          $excludeRegex = "$env:EXCLUDES"
-          $required = @('Blosc','Boost','Catch2','Cereal','CURL','Eigen','EXPAT','GLEW','GMP','heatshrink','JPEG','json','LibBGCode','MPFR','NanoSVG','NLopt','OCCT','OpenCSG','PNG','Qhull','TBB','wxWidgets','z3','ZLIB','CGAL','OpenEXR','OpenVDB')
-          $required = $required | Where-Object { $_ -notmatch $excludeRegex }
-          $missing = @()
-          foreach ($d in $required) {
-            $stampPath = "deps/build/dep_${d}-prefix/src/dep_${d}-stamp"
-            $files = Get-ChildItem $stampPath -Recurse -File -ErrorAction SilentlyContinue
-            $installed = ($files | Where-Object { $_.Name -like '*-install' }).Count -gt 0
-            $ok = $installed
-            if (-not $ok -and $d -eq 'GMP')  { $ok = Test-Path (Join-Path $env:DEPS_DESTDIR 'usr\local\include\gmp.h') }
-            if (-not $ok -and $d -eq 'MPFR') { $ok = Test-Path (Join-Path $env:DEPS_DESTDIR 'usr\local\include\mpfr.h') }
-            if (-not $ok) { $missing += $d }
-          }
-          if ($missing.Count -gt 0) {
-            Write-Host "FAILED. Missing/incomplete required deps: $($missing -join ', ')"
+          $rc = "${{ steps.build-deps.outputs.build_rc }}"
+          if ($rc -ne "0") {
+            Write-Host "msbuild returned $rc — deps build failed."
             exit 1
-          } else {
-            Write-Host "All required deps built successfully."
           }
+          Write-Host "msbuild returned 0 — deps build succeeded."
 
       - name: Save deps cache
         if: always() && !cancelled()
