@@ -10,20 +10,15 @@ if (APPLE AND CMAKE_OSX_ARCHITECTURES)
     set(_context_arch_line "-DBOOST_CONTEXT_ARCHITECTURE:STRING=${CMAKE_OSX_ARCHITECTURES}")
 endif ()
 
-# Boost 1.83's CMake mis-selects the 32-bit `armasm` assembler when targeting
-# Windows ARM64 (should be `armasm64`). PrusaSlicer does not use boost::context,
-# so exclude context (and the libs that pull it in) on Windows ARM64.
-set(_extra_excludes "")
-if (MSVC AND CMAKE_GENERATOR_PLATFORM STREQUAL "ARM64")
-    set(_extra_excludes "|context|coroutine|coroutine2")
-endif ()
-
+# Bumped from 1.83.0 to 1.85.0: 1.83's CMake selects the 32-bit `armasm`
+# assembler on Windows ARM64 (should be `armasm64`); 1.85 has proper Windows
+# ARM64 support for Boost.Context and friends.
 add_cmake_project(Boost
-    URL "https://github.com/boostorg/boost/releases/download/boost-1.83.0/boost-1.83.0.zip"
-    URL_HASH SHA256=9effa3d7f9d92b8e33e2b41d82f4358f97ff7c588d5918720339f2b254d914c6
+    URL "https://github.com/boostorg/boost/releases/download/boost-1.85.0/boost-1.85.0-cmake.zip"
+    URL_HASH SHA256=b5486e7b75715d5b1b2ef405a4cc29506d1a432a64e8b1bb8028df57239e768d
     LIST_SEPARATOR |
     CMAKE_ARGS
-        "-DBOOST_EXCLUDE_LIBRARIES:STRING=contract|fiber|numpy|stacktrace|wave|test${_extra_excludes}"
+        -DBOOST_EXCLUDE_LIBRARIES:STRING=contract|fiber|numpy|stacktrace|wave|test
         -DBOOST_LOCALE_ENABLE_ICU:BOOL=OFF # do not link to libicu, breaks compatibility between distros
         -DBUILD_TESTING:BOOL=OFF
         -DBOOST_IOSTREAMS_ENABLE_ZSTD:BOOL=OFF

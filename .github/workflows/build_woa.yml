@@ -69,6 +69,29 @@ jobs:
           restore-keys: |
             woa-deps-v5-
 
+      - name: Scrub stale dep state from cache
+        if: ${{ !inputs.reset_cache }}
+        shell: pwsh
+        run: |
+          # When a dep's URL or source layout changes (e.g. Boost version bump,
+          # GLEW fork swap), CMake's per-build CMakeCache.txt records the old
+          # source path and refuses to reconfigure. Force-clean those subtrees
+          # so ExternalProject re-fetches and re-configures from scratch.
+          $scrub = @('Boost','GLEW','LibBGCode','OpenCSG')
+          foreach ($d in $scrub) {
+            foreach ($p in @("deps/build/dep_${d}-prefix", "deps/build/builds/$d", "deps/build/dep_${d}.dir")) {
+              if (Test-Path $p) {
+                Write-Host "Removing $p"
+                Remove-Item -Recurse -Force $p -ErrorAction SilentlyContinue
+              }
+            }
+          }
+          # Also clear the parent CMakeCache so it reflects new dep configs.
+          if (Test-Path 'deps/build/CMakeCache.txt') {
+            Write-Host "Removing deps/build/CMakeCache.txt"
+            Remove-Item -Force 'deps/build/CMakeCache.txt' -ErrorAction SilentlyContinue
+          }
+
       - name: Configure deps
         shell: cmd
         run: |
@@ -141,19 +164,20 @@ jobs:
         shell: pwsh
         run: |
           # Re-evaluate by checking that all NON-EXCLUDED deps installed.
+          # OpenSSL is intentionally not built on Windows (CURL uses Schannel),
+          # so omit it from the required list regardless of EXCLUDES input.
           $excludeRegex = "$env:EXCLUDES"
-          $required = @('Blosc','Boost','Catch2','Cereal','CURL','Eigen','EXPAT','GLEW','GMP','heatshrink','JPEG','json','LibBGCode','MPFR','NanoSVG','NLopt','OCCT','OpenCSG','OpenSSL','PNG','Qhull','TBB','wxWidgets','z3','ZLIB','CGAL','OpenEXR','OpenVDB')
+          $required = @('Blosc','Boost','Catch2','Cereal','CURL','Eigen','EXPAT','GLEW','GMP','heatshrink','JPEG','json','LibBGCode','MPFR','NanoSVG','NLopt','OCCT','OpenCSG','PNG','Qhull','TBB','wxWidgets','z3','ZLIB','CGAL','OpenEXR','OpenVDB')
           $required = $required | Where-Object { $_ -notmatch $excludeRegex }
           $missing = @()
           foreach ($d in $required) {
             $stampPath = "deps/build/dep_${d}-prefix/src/dep_${d}-stamp"
             $files = Get-ChildItem $stampPath -Recurse -File -ErrorAction SilentlyContinue
             $installed = ($files | Where-Object { $_.Name -like '*-install' }).Count -gt 0
-            $copied = (Test-Path "$env:DEPS_DESTDIR/usr/local/include/gmp.h") -and ($d -eq 'GMP')
-            $copied2 = (Test-Path "$env:DEPS_DESTDIR/usr/local/include/mpfr.h") -and ($d -eq 'MPFR')
-            if (-not $installed -and -not $copied -and -not $copied2) {
-              $missing += $d
-            }
+            $ok = $installed
+            if (-not $ok -and $d -eq 'GMP')  { $ok = Test-Path (Join-Path $env:DEPS_DESTDIR 'usr\local\include\gmp.h') }
+            if (-not $ok -and $d -eq 'MPFR') { $ok = Test-Path (Join-Path $env:DEPS_DESTDIR 'usr\local\include\mpfr.h') }
+            if (-not $ok) { $missing += $d }
           }
           if ($missing.Count -gt 0) {
             Write-Host "FAILED. Missing/incomplete required deps: $($missing -join ', ')"
