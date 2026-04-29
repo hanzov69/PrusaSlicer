@@ -62,10 +62,21 @@ set(DEP_wxWidgets_DEPENDS ZLIB PNG EXPAT JPEG NanoSVG)
 
 if (MSVC)
     # After the build, copy the WebView2Loader.dll into the installation directory.
-    # This should probably be done better.
+    # wxWidgets emits to lib/vc_<arch>_lib/ where <arch> is x64, arm64, or empty for Win32.
+    set(_wx_msvc_arch x64)
+    if (CMAKE_GENERATOR_PLATFORM STREQUAL "ARM64")
+        set(_wx_msvc_arch arm64)
+    elseif (CMAKE_GENERATOR_PLATFORM STREQUAL "Win32")
+        set(_wx_msvc_arch "")
+    endif ()
+    if (_wx_msvc_arch)
+        set(_wx_lib_subdir "vc_${_wx_msvc_arch}_lib")
+    else ()
+        set(_wx_lib_subdir "vc_lib")
+    endif ()
     add_custom_command(TARGET dep_wxWidgets POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy
-            "${CMAKE_CURRENT_BINARY_DIR}/builds/wxWidgets/lib/vc_x64_lib/WebView2Loader.dll"
+            "${CMAKE_CURRENT_BINARY_DIR}/builds/wxWidgets/lib/${_wx_lib_subdir}/WebView2Loader.dll"
             "${${PROJECT_NAME}_DEP_INSTALL_PREFIX}/bin/WebView2Loader.dll")
 endif()
 

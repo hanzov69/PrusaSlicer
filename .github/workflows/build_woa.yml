@@ -116,8 +116,8 @@ jobs:
             foreach ($d in $deps) {
               $stampPath = "deps/build/dep_${d}-prefix/src/dep_${d}-stamp"
               if (Test-Path $stampPath) {
-                $files = Get-ChildItem $stampPath -ErrorAction SilentlyContinue | Sort-Object Name
-                $names = $files | ForEach-Object { $_.Name }
+                # Multi-config (Visual Studio) places stamps under <Config>/ subdir.
+                $files = Get-ChildItem $stampPath -Recurse -File -ErrorAction SilentlyContinue
                 $hasInstall = ($files | Where-Object { $_.Name -like '*-install' }).Count -gt 0
                 $hasBuild   = ($files | Where-Object { $_.Name -like '*-build' }).Count -gt 0
                 $hasConfig  = ($files | Where-Object { $_.Name -like '*-configure' }).Count -gt 0
@@ -147,7 +147,8 @@ jobs:
           $missing = @()
           foreach ($d in $required) {
             $stampPath = "deps/build/dep_${d}-prefix/src/dep_${d}-stamp"
-            $installed = Test-Path "$stampPath/dep_${d}-install"
+            $files = Get-ChildItem $stampPath -Recurse -File -ErrorAction SilentlyContinue
+            $installed = ($files | Where-Object { $_.Name -like '*-install' }).Count -gt 0
             $copied = (Test-Path "$env:DEPS_DESTDIR/usr/local/include/gmp.h") -and ($d -eq 'GMP')
             $copied2 = (Test-Path "$env:DEPS_DESTDIR/usr/local/include/mpfr.h") -and ($d -eq 'MPFR')
             if (-not $installed -and -not $copied -and -not $copied2) {
