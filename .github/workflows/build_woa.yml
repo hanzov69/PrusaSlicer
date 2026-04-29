@@ -7,9 +7,13 @@ on:
         description: 'Skip restoring deps cache'
         default: false
         type: boolean
+      build_app:
+        description: 'Build the PrusaSlicer app after deps'
+        default: true
+        type: boolean
       excludes:
         description: 'Regex of deps to exclude'
-        default: 'OpenEXR|OpenVDB|CGAL'
+        default: 'OpenEXR|OpenVDB|GMP|MPFR'
         type: string
       upstream_ref:
         description: 'Upstream ref/SHA to check out (blank = current branch tip)'
@@ -35,7 +39,7 @@ jobs:
       CMAKE_GENERATOR: Visual Studio 17 2022
       CMAKE_GENERATOR_PLATFORM: ARM64
       CMAKE_BUILD_PARALLEL_LEVEL: 4
-      EXCLUDES: ${{ inputs.excludes || 'OpenEXR|OpenVDB|CGAL' }}
+      EXCLUDES: ${{ inputs.excludes || 'OpenEXR|OpenVDB|GMP|MPFR' }}
 
     steps:
       - name: Checkout
@@ -242,3 +246,111 @@ jobs:
           path: deps-destdir
           retention-days: 7
           compression-level: 1
+
+      # ------------------------------------------------------------------
+      # App build (PrusaSlicer itself), reusing the deps we just built.
+      # ------------------------------------------------------------------
+
+      - name: Restore app-build cache
+        if: success() && inputs.build_app != false
+        id: app-cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: build-app
+          key: woa-app-v1-${{ hashFiles('CMakeLists.txt', 'src/CMakeLists.txt', 'src/libslic3r/CMakeLists.txt') }}
+          restore-keys: |
+            woa-app-v1-
+
+      - name: Configure app
+        if: success() && inputs.build_app != false
+        shell: cmd
+        run: |
+          @echo on
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set VSROOT=%%i
+          if not exist "%VSROOT%" for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set VSROOT=%%i
+          call "%VSROOT%\Common7\Tools\vsdevcmd.bat" -arch=arm64 -host_arch=arm64 -app_platform=Desktop || exit /b 1
+
+          if not exist build-app mkdir build-app
+          cmake.exe -S . -B build-app -G "Visual Studio 17 2022" -A ARM64 ^
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ^
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo ^
+            -DCMAKE_PREFIX_PATH="%DEPS_DESTDIR%\usr\local" ^
+            -DSLIC3R_PCH=OFF ^
+            -DSLIC3R_BUILD_TESTS=OFF ^
+            -DSLIC3R_GUI=1
+          if errorlevel 1 (echo App configure failed & exit /b 1)
+          echo App configured successfully.
+
+      - name: Build app
+        id: build-app
+        if: success() && inputs.build_app != false
+        shell: cmd
+        run: |
+          @echo on
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set VSROOT=%%i
+          if not exist "%VSROOT%" for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set VSROOT=%%i
+          call "%VSROOT%\Common7\Tools\vsdevcmd.bat" -arch=arm64 -host_arch=arm64 -app_platform=Desktop || exit /b 1
+
+          cd build-app
+          msbuild /m:4 /p:Configuration=RelWithDebInfo /p:Platform=ARM64 /v:normal /nologo PrusaSlicer.sln
+          set APP_RC=%ERRORLEVEL%
+          echo APP-MSBUILD-RC=%APP_RC%
+          (echo build_rc=%APP_RC%)>> "%GITHUB_OUTPUT%"
+          exit /b 0
+
+      - name: Save app-build cache
+        if: always() && !cancelled() && inputs.build_app != false
+        uses: actions/cache/save@v4
+        with:
+          path: build-app
+          key: woa-app-v1-${{ hashFiles('CMakeLists.txt', 'src/CMakeLists.txt', 'src/libslic3r/CMakeLists.txt') }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Collect app build logs
+        if: always() && inputs.build_app != false
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts/app-logs | Out-Null
+          $patterns = @(
+            'build-app/CMakeCache.txt',
+            'build-app/CMakeFiles/CMakeError.log',
+            'build-app/CMakeFiles/CMakeOutput.log'
+          )
+          foreach ($p in $patterns) {
+            Get-ChildItem -Path $p -ErrorAction SilentlyContinue | ForEach-Object {
+              $rel = (Resolve-Path -Relative $_.FullName) -replace '^\.[\\/]',''
+              $dest = Join-Path 'artifacts/app-logs' ($rel -replace '[\\/:]','_')
+              Copy-Item $_.FullName $dest -ErrorAction SilentlyContinue
+            }
+          }
+
+      - name: Upload app build logs
+        if: always() && inputs.build_app != false
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-logs-${{ github.run_attempt }}
+          path: artifacts/app-logs
+          if-no-files-found: warn
+
+      - name: Upload PrusaSlicer ARM64 binaries
+        if: success() && inputs.build_app != false && steps.build-app.outputs.build_rc == '0'
+        uses: actions/upload-artifact@v4
+        with:
+          name: prusaslicer-woa-arm64
+          path: |
+            build-app/src/RelWithDebInfo/*.exe
+            build-app/src/RelWithDebInfo/*.dll
+            build-app/src/RelWithDebInfo/*.pdb
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Final result
+        if: always() && inputs.build_app != false
+        shell: pwsh
+        run: |
+          $rc = "${{ steps.build-app.outputs.build_rc }}"
+          if (-not $rc) { Write-Host "App build did not run."; exit 0 }
+          if ($rc -ne "0") {
+            Write-Host "App msbuild returned $rc — app build failed."
+            exit 1
+          }
+          Write-Host "App msbuild returned 0 — app build succeeded."
