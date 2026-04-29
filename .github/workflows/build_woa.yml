@@ -65,9 +65,9 @@ jobs:
           path: |
             deps-destdir
             deps/build
-          key: woa-deps-v4-${{ hashFiles('deps/**/*.cmake', 'deps/CMakeLists.txt', 'cmake/modules/AddCMakeProject.cmake') }}
+          key: woa-deps-v5-${{ hashFiles('deps/**/*.cmake', 'deps/CMakeLists.txt', 'cmake/modules/AddCMakeProject.cmake') }}
           restore-keys: |
-            woa-deps-v4-
+            woa-deps-v5-
 
       - name: Configure deps
         shell: cmd
@@ -81,6 +81,7 @@ jobs:
           if not exist deps\build mkdir deps\build
           cd deps\build
           cmake.exe .. -G "Visual Studio 17 2022" -A ARM64 ^
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ^
             -DDESTDIR="%DEPS_DESTDIR%" ^
             -DDEP_DEBUG=OFF ^
             "-DPrusaSlicer_deps_PACKAGE_EXCLUDES=%EXCLUDES%"
@@ -167,7 +168,7 @@ jobs:
           path: |
             deps-destdir
             deps/build
-          key: woa-deps-v4-${{ hashFiles('deps/**/*.cmake', 'deps/CMakeLists.txt', 'cmake/modules/AddCMakeProject.cmake') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: woa-deps-v5-${{ hashFiles('deps/**/*.cmake', 'deps/CMakeLists.txt', 'cmake/modules/AddCMakeProject.cmake') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Collect logs
         if: always()
