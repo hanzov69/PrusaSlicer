@@ -1,0 +1,148 @@
+name: Build WoA (PoC)
+
+on:
+  workflow_dispatch:
+    inputs:
+      steps:
+        description: 'build_win.bat -STEPS value'
+        default: 'deps'
+        type: choice
+        options:
+          - deps
+          - deps-dirty
+          - all
+          - all-dirty
+          - app
+          - app-dirty
+      reset_cache:
+        description: 'Skip restoring deps cache'
+        default: false
+        type: boolean
+      upstream_ref:
+        description: 'Upstream ref/SHA to check out (blank = current branch tip)'
+        default: ''
+        type: string
+  push:
+    branches: [woa-poc]
+    paths:
+      - '.github/workflows/build_woa.yml'
+      - 'deps/**'
+      - 'cmake/**'
+
+concurrency:
+  group: woa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-11-arm
+    timeout-minutes: 350
+    env:
+      DEPS_DESTDIR: ${{ github.workspace }}\deps-destdir
+      CMAKE_BUILD_PARALLEL_LEVEL: 4
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.upstream_ref || github.ref }}
+          fetch-depth: 1
+
+      - name: Runner probe
+        shell: pwsh
+        run: |
+          Write-Host "=== Architecture ==="
+          Write-Host "PROCESSOR_ARCHITECTURE=$env:PROCESSOR_ARCHITECTURE"
+          Write-Host "PROCESSOR_IDENTIFIER=$env:PROCESSOR_IDENTIFIER"
+          Write-Host "OS Build:"
+          (Get-CimInstance Win32_OperatingSystem) | Select Caption,Version,OSArchitecture | Format-List
+
+          Write-Host "=== CMake ==="
+          (Get-Command cmake -ErrorAction SilentlyContinue).Source
+          cmake --version
+
+          Write-Host "=== Visual Studio ==="
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) { $vswhere = "$env:ProgramFiles\Microsoft Visual Studio\Installer\vswhere.exe" }
+          if (Test-Path $vswhere) {
+            & $vswhere -nologo -all -products * -property installationPath
+            & $vswhere -nologo -all -products * -property catalog_productLineVersion
+            Write-Host "--- Components ---"
+            $vsroot = & $vswhere -nologo -latest -property installationPath
+            if ($vsroot) {
+              Get-ChildItem "$vsroot\VC\Tools\MSVC" -ErrorAction SilentlyContinue | Select-Object Name
+              Write-Host "--- ARM64 cl present? ---"
+              Get-ChildItem -Recurse -Filter cl.exe "$vsroot\VC\Tools\MSVC" -ErrorAction SilentlyContinue |
+                Where-Object FullName -match 'arm64' | Select-Object -First 3 FullName
+            }
+          } else {
+            Write-Host "vswhere not found"
+          }
+
+          Write-Host "=== Tools ==="
+          foreach ($t in @('git','cmake','ninja','perl','python','strawberry','nasm','yasm','msys2','7z')) {
+            $c = Get-Command $t -ErrorAction SilentlyContinue
+            if ($c) { Write-Host "$t -> $($c.Source)" } else { Write-Host "$t -> (missing)" }
+          }
+
+          Write-Host "=== Disk ==="
+          Get-PSDrive -PSProvider FileSystem | Format-Table Name,@{n='Free(GB)';e={[math]::Round($_.Free/1GB,1)}},@{n='Used(GB)';e={[math]::Round($_.Used/1GB,1)}}
+
+      - name: Restore deps cache
+        id: deps-cache
+        if: ${{ !inputs.reset_cache }}
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps-destdir
+            deps/build
+          key: woa-deps-v1-${{ hashFiles('deps/**/*.cmake', 'deps/CMakeLists.txt', 'cmake/modules/AddCMakeProject.cmake') }}
+          restore-keys: |
+            woa-deps-v1-
+
+      - name: Build deps (build_win.bat)
+        shell: cmd
+        run: |
+          @echo on
+          set PS_ECHO_ON=1
+          call build_win.bat -ARCH arm64 -CONFIG RelWithDebInfo -DESTDIR "%DEPS_DESTDIR%" -STEPS ${{ inputs.steps || 'deps' }}
+
+      - name: Collect logs
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts/logs | Out-Null
+          # Top-level CMake / build logs
+          $patterns = @(
+            'deps/build/CMakeFiles/*.log',
+            'deps/build/CMakeCache.txt',
+            'deps/build/dep_*-prefix/src/dep_*-stamp/*.log',
+            'deps/build/**/*.log'
+          )
+          foreach ($p in $patterns) {
+            Get-ChildItem -Path $p -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+              $rel = Resolve-Path -Relative $_.FullName
+              $dest = Join-Path 'artifacts/logs' ($rel -replace '[\\/:]','_')
+              Copy-Item $_.FullName $dest -ErrorAction SilentlyContinue
+            }
+          }
+          Write-Host "Collected log count:"
+          (Get-ChildItem artifacts/logs -ErrorAction SilentlyContinue | Measure-Object).Count
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deps-logs-${{ github.run_attempt }}
+          path: artifacts/logs
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload deps destdir (on success only)
+        if: success() && (inputs.steps == 'deps' || inputs.steps == 'deps-dirty' || inputs.steps == '')
+        uses: actions/upload-artifact@v4
+        with:
+          name: deps-destdir-arm64
+          path: deps-destdir
+          retention-days: 7
+          compression-level: 1
