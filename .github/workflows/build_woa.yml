@@ -21,6 +21,8 @@ on:
       - '.github/workflows/build_woa.yml'
       - 'deps/**'
       - 'cmake/**'
+      - 'CMakeLists.txt'
+      - 'src/**/CMakeLists.txt'
 
 concurrency:
   group: woa-${{ github.ref }}
@@ -271,6 +273,7 @@ jobs:
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ^
             -DCMAKE_BUILD_TYPE=RelWithDebInfo ^
             -DCMAKE_PREFIX_PATH="%DEPS_DESTDIR%\usr\local" ^
+            -DCGAL_DISABLE_GMP=ON ^
             -DSLIC3R_PCH=OFF ^
             -DSLIC3R_BUILD_TESTS=OFF ^
             -DSLIC3R_GUI=1
