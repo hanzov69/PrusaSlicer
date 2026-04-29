@@ -1,8 +1,13 @@
+message(STATUS "[FindGLEW shim] entering")
 set(_q "")
 if(GLEW_FIND_QUIETLY)
     set(_q QUIET)
 endif()
 find_package(GLEW ${GLEW_FIND_VERSION} CONFIG ${_q})
+message(STATUS "[FindGLEW shim] after CONFIG: GLEW_FOUND=${GLEW_FOUND} GLEW_DIR=${GLEW_DIR}")
+if(TARGET libglew_static)
+    message(STATUS "[FindGLEW shim] libglew_static target exists")
+endif()
 
 if(NOT GLEW_FIND_QUIETLY)
     if (NOT GLEW_FOUND)
@@ -22,16 +27,20 @@ endif()
 # Some GLEW packages (e.g. the glew-cmake fork) export their targets under
 # different names. Ensure the canonical GLEW::GLEW imported target exists for
 # downstream consumers.
-if (GLEW_FOUND AND NOT TARGET GLEW::GLEW)
+if (NOT TARGET GLEW::GLEW)
     foreach(_glew_alt libglew_static libglew_shared glew_s glew
                       glew::glew_s glew::glew
                       libglew::libglew_static libglew::libglew_shared)
         if (TARGET ${_glew_alt})
             add_library(GLEW::GLEW ALIAS ${_glew_alt})
-            if(NOT GLEW_FIND_QUIETLY)
-                message(STATUS "Aliased GLEW::GLEW -> ${_glew_alt}")
-            endif()
+            message(STATUS "[FindGLEW shim] Aliased GLEW::GLEW -> ${_glew_alt}")
+            set(GLEW_FOUND TRUE)
             break()
         endif()
     endforeach()
+endif()
+if(TARGET GLEW::GLEW)
+    message(STATUS "[FindGLEW shim] leaving with GLEW::GLEW present, GLEW_FOUND=${GLEW_FOUND}")
+else()
+    message(STATUS "[FindGLEW shim] leaving WITHOUT GLEW::GLEW, GLEW_FOUND=${GLEW_FOUND}")
 endif()
