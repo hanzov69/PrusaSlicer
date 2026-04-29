@@ -146,7 +146,8 @@ jobs:
           msbuild /m:4 /p:Configuration=RelWithDebInfo /p:Platform=ARM64 /v:normal /nologo ALL_BUILD.vcxproj
           set BUILD_RC=%ERRORLEVEL%
           echo MSBUILD-RC=%BUILD_RC%
-          echo build_rc=%BUILD_RC%>>%GITHUB_OUTPUT%
+          REM Parens so the digit before >> is not parsed as a stdin-redirect FD.
+          (echo build_rc=%BUILD_RC%)>> "%GITHUB_OUTPUT%"
           REM Always exit 0 here so artifact upload happens; the next step will set final status.
           exit /b 0
 
