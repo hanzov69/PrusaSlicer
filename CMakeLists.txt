@@ -573,9 +573,10 @@ if(OpenVDB_FOUND)
     slic3r_remap_configs(IlmBase::Half RelWithDebInfo Release)
     slic3r_remap_configs(Blosc::blosc RelWithDebInfo Release)
 else ()
-    message(FATAL_ERROR "OpenVDB could not be found with the bundled find module. "
-                   "You can try to specify the find module location of your "
-                   "OpenVDB installation with the OPENVDB_FIND_MODULE_PATH cache variable.")
+    # OpenVDB is only required for SLA hollow generation. Make it optional so
+    # the rest of PrusaSlicer can build on platforms (e.g. Windows on ARM)
+    # where OpenVDB and its OpenEXR dependency don't currently compile.
+    message(WARNING "OpenVDB not found — SLA hollow generation will be disabled.")
 endif ()
 
 set(TOP_LEVEL_PROJECT_DIR ${PROJECT_SOURCE_DIR})
