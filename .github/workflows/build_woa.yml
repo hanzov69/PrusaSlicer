@@ -44,6 +44,24 @@ jobs:
           ref: ${{ inputs.upstream_ref || github.ref }}
           fetch-depth: 1
 
+      - name: Install CMake 3.31 (ARM64)
+        shell: pwsh
+        run: |
+          # CMake 4.x fails on Boost.Context's enable_language(ASM_ARMASM) because
+          # it requires CMakeASM_ARMASMLinkerInformation.cmake which CMake 4 does
+          # not ship (linker introspection regression for old languages). Pin to
+          # 3.31 which doesn't enforce this and works fine with Boost 1.85.
+          $url = "https://github.com/Kitware/CMake/releases/download/v3.31.12/cmake-3.31.12-windows-arm64.zip"
+          $zip = "$env:RUNNER_TEMP\cmake.zip"
+          $dst = "$env:RUNNER_TEMP\cmake"
+          Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath $dst -Force
+          $bin = (Get-ChildItem -Recurse -Filter cmake.exe $dst | Select-Object -First 1).DirectoryName
+          Write-Host "Pinned cmake: $bin"
+          # Prepend to PATH for subsequent steps
+          Add-Content -Path $env:GITHUB_PATH -Value $bin
+          & "$bin\cmake.exe" --version
+
       - name: Runner probe
         shell: pwsh
         run: |
