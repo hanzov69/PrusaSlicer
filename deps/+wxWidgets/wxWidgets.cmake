@@ -32,6 +32,10 @@ add_cmake_project(wxWidgets
     URL_HASH SHA256=3EBB971DDB45CEEA6D9B965C3D0266F44EDAE71F2A7DAA5D48DB34BD95AA878B
     PATCH_COMMAND COMMAND ${PATCH_CMD} ${CMAKE_CURRENT_LIST_DIR}/wx-fixes.patch
     CMAKE_ARGS
+        # Prefer expat's installed CMake config (which sets XML_STATIC) over
+        # CMake's bundled FindEXPAT module, so wxbase32u_xml gets the right
+        # compile defines for static expat linkage.
+        -DCMAKE_FIND_PACKAGE_PREFER_CONFIG:BOOL=ON
         "-DCMAKE_DEBUG_POSTFIX:STRING="
         -DwxBUILD_PRECOMP=ON
         ${_wx_toolkit}

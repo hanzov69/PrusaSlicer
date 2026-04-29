@@ -17,6 +17,7 @@ add_cmake_project(Boost
     URL "https://github.com/boostorg/boost/releases/download/boost-1.85.0/boost-1.85.0-cmake.zip"
     URL_HASH SHA256=b5486e7b75715d5b1b2ef405a4cc29506d1a432a64e8b1bb8028df57239e768d
     LIST_SEPARATOR |
+    PATCH_COMMAND ${PATCH_CMD} ${CMAKE_CURRENT_LIST_DIR}/boost-arm64-asm.patch
     CMAKE_ARGS
         -DBOOST_EXCLUDE_LIBRARIES:STRING=contract|fiber|numpy|stacktrace|wave|test
         -DBOOST_LOCALE_ENABLE_ICU:BOOL=OFF # do not link to libicu, breaks compatibility between distros
