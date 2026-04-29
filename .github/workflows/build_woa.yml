@@ -95,7 +95,7 @@ jobs:
           # GLEW fork swap), CMake's per-build CMakeCache.txt records the old
           # source path and refuses to reconfigure. Force-clean those subtrees
           # so ExternalProject re-fetches and re-configures from scratch.
-          $scrub = @('Boost','GLEW','LibBGCode','OpenCSG','wxWidgets')
+          $scrub = @('Boost','EXPAT','GLEW','LibBGCode','OpenCSG','wxWidgets')
           foreach ($d in $scrub) {
             foreach ($p in @("deps/build/dep_${d}-prefix", "deps/build/builds/$d", "deps/build/dep_${d}.dir")) {
               if (Test-Path $p) {
