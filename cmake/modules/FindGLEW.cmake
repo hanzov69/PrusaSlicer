@@ -18,3 +18,20 @@ if (NOT GLEW_FOUND)
     include(FindGLEW)
     set(CMAKE_MODULE_PATH ${_modpath})
 endif()
+
+# Some GLEW packages (e.g. the glew-cmake fork) export their targets under
+# different names. Ensure the canonical GLEW::GLEW imported target exists for
+# downstream consumers.
+if (GLEW_FOUND AND NOT TARGET GLEW::GLEW)
+    foreach(_glew_alt libglew_static libglew_shared glew_s glew
+                      glew::glew_s glew::glew
+                      libglew::libglew_static libglew::libglew_shared)
+        if (TARGET ${_glew_alt})
+            add_library(GLEW::GLEW ALIAS ${_glew_alt})
+            if(NOT GLEW_FIND_QUIETLY)
+                message(STATUS "Aliased GLEW::GLEW -> ${_glew_alt}")
+            endif()
+            break()
+        endif()
+    endforeach()
+endif()
