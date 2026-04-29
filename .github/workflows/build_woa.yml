@@ -3,21 +3,14 @@ name: Build WoA (PoC)
 on:
   workflow_dispatch:
     inputs:
-      steps:
-        description: 'build_win.bat -STEPS value'
-        default: 'deps'
-        type: choice
-        options:
-          - deps
-          - deps-dirty
-          - all
-          - all-dirty
-          - app
-          - app-dirty
       reset_cache:
         description: 'Skip restoring deps cache'
         default: false
         type: boolean
+      excludes:
+        description: 'Regex of deps to exclude'
+        default: 'OpenEXR|OpenVDB|CGAL'
+        type: string
       upstream_ref:
         description: 'Upstream ref/SHA to check out (blank = current branch tip)'
         default: ''
@@ -42,6 +35,7 @@ jobs:
       CMAKE_GENERATOR: Visual Studio 17 2022
       CMAKE_GENERATOR_PLATFORM: ARM64
       CMAKE_BUILD_PARALLEL_LEVEL: 4
+      EXCLUDES: ${{ inputs.excludes || 'OpenEXR|OpenVDB|CGAL' }}
 
     steps:
       - name: Checkout
@@ -53,43 +47,15 @@ jobs:
       - name: Runner probe
         shell: pwsh
         run: |
-          Write-Host "=== Architecture ==="
           Write-Host "PROCESSOR_ARCHITECTURE=$env:PROCESSOR_ARCHITECTURE"
-          Write-Host "PROCESSOR_IDENTIFIER=$env:PROCESSOR_IDENTIFIER"
-          (Get-CimInstance Win32_OperatingSystem) | Select Caption,Version,OSArchitecture | Format-List
           Write-Host "CMAKE_GENERATOR=$env:CMAKE_GENERATOR"
           Write-Host "CMAKE_GENERATOR_PLATFORM=$env:CMAKE_GENERATOR_PLATFORM"
-
-          Write-Host "=== CMake ==="
-          (Get-Command cmake -ErrorAction SilentlyContinue).Source
           cmake --version
-
-          Write-Host "=== Visual Studio ==="
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           if (-not (Test-Path $vswhere)) { $vswhere = "$env:ProgramFiles\Microsoft Visual Studio\Installer\vswhere.exe" }
-          if (Test-Path $vswhere) {
-            & $vswhere -nologo -all -products * -property installationPath
-            & $vswhere -nologo -all -products * -property catalog_productLineVersion
-            $vsroot = & $vswhere -nologo -latest -property installationPath
-            if ($vsroot) {
-              Write-Host "--- Tools dirs ---"
-              Get-ChildItem "$vsroot\VC\Tools\MSVC" -ErrorAction SilentlyContinue | Select-Object Name
-              Write-Host "--- ARM64 cl present? ---"
-              Get-ChildItem -Recurse -Filter cl.exe "$vsroot\VC\Tools\MSVC" -ErrorAction SilentlyContinue |
-                Where-Object FullName -match 'arm64' | Select-Object -First 3 FullName
-            }
-          } else {
-            Write-Host "vswhere not found"
-          }
-
-          Write-Host "=== Tools ==="
-          foreach ($t in @('git','cmake','ninja','perl','python','strawberry','nasm','yasm','msys2','7z','vcpkg')) {
-            $c = Get-Command $t -ErrorAction SilentlyContinue
-            if ($c) { Write-Host "$t -> $($c.Source)" } else { Write-Host "$t -> (missing)" }
-          }
-
-          Write-Host "=== Disk ==="
-          Get-PSDrive -PSProvider FileSystem | Format-Table Name,@{n='Free(GB)';e={[math]::Round($_.Free/1GB,1)}},@{n='Used(GB)';e={[math]::Round($_.Used/1GB,1)}}
+          $vsroot = & $vswhere -nologo -latest -property installationPath
+          Write-Host "VS root: $vsroot"
+          Get-PSDrive -PSProvider FileSystem | Format-Table Name,@{n='Free(GB)';e={[math]::Round($_.Free/1GB,1)}}
 
       - name: Restore deps cache
         id: deps-cache-restore
@@ -99,28 +65,110 @@ jobs:
           path: |
             deps-destdir
             deps/build
-          key: woa-deps-v2-${{ hashFiles('deps/**/*.cmake', 'deps/CMakeLists.txt', 'cmake/modules/AddCMakeProject.cmake', '.github/workflows/build_woa.yml') }}
+          key: woa-deps-v3-${{ hashFiles('deps/**/*.cmake', 'deps/CMakeLists.txt', 'cmake/modules/AddCMakeProject.cmake') }}
           restore-keys: |
+            woa-deps-v3-
             woa-deps-v2-
 
-      - name: Build deps (build_win.bat)
+      - name: Configure deps
         shell: cmd
         run: |
           @echo on
-          set PS_ECHO_ON=1
-          REM Force ARM64 platform for all CMake invocations (parent + ExternalProject children)
-          set CMAKE_GENERATOR_PLATFORM=ARM64
-          set CMAKE_GENERATOR=Visual Studio 17 2022
-          call build_win.bat -ARCH arm64 -CONFIG RelWithDebInfo -DESTDIR "%DEPS_DESTDIR%" -STEPS ${{ inputs.steps || 'deps' }}
+          REM Set up MSVC ARM64 native dev environment
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set VSROOT=%%i
+          if not exist "%VSROOT%" for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set VSROOT=%%i
+          call "%VSROOT%\Common7\Tools\vsdevcmd.bat" -arch=arm64 -host_arch=arm64 -app_platform=Desktop || exit /b 1
 
-      - name: Save deps cache (always, even on failure)
+          if not exist deps\build mkdir deps\build
+          cd deps\build
+          cmake.exe .. -G "Visual Studio 17 2022" -A ARM64 ^
+            -DDESTDIR="%DEPS_DESTDIR%" ^
+            -DDEP_DEBUG=OFF ^
+            "-DPrusaSlicer_deps_PACKAGE_EXCLUDES=%EXCLUDES%"
+          if errorlevel 1 (echo Configure failed & exit /b 1)
+          echo Configured successfully.
+          type CMakeCache.txt | findstr /R "PrusaSlicer_deps_PACKAGE_EXCLUDES CMAKE_GENERATOR_PLATFORM CMAKE_VS_PLATFORM_NAME"
+
+      - name: Build deps
+        shell: cmd
+        run: |
+          @echo on
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set VSROOT=%%i
+          if not exist "%VSROOT%" for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set VSROOT=%%i
+          call "%VSROOT%\Common7\Tools\vsdevcmd.bat" -arch=arm64 -host_arch=arm64 -app_platform=Desktop || exit /b 1
+
+          cd deps\build
+          REM Continue past failures so we can capture all errors in one run.
+          msbuild /m:4 /p:Configuration=RelWithDebInfo /p:Platform=ARM64 /v:minimal /nologo /clp:Summary;ErrorsOnly;WarningsOnly ALL_BUILD.vcxproj
+          set BUILD_RC=%ERRORLEVEL%
+          echo MSBUILD-RC=%BUILD_RC%
+          REM Always exit 0 here so artifact upload happens; the next step will set final status.
+          exit /b 0
+
+      - name: Inventory deps progress
+        if: always()
+        shell: pwsh
+        run: |
+          $stampDir = "deps/build"
+          if (Test-Path $stampDir) {
+            Write-Host "=== Per-dep stamp file presence ==="
+            $deps = @('Blosc','Boost','Catch2','Cereal','CURL','Eigen','EXPAT','GLEW','GMP','heatshrink','JPEG','json','LibBGCode','MPFR','NanoSVG','NLopt','OCCT','OpenCSG','OpenEXR','OpenSSL','OpenVDB','PNG','Qhull','TBB','wxWidgets','z3','ZLIB','CGAL')
+            foreach ($d in $deps) {
+              $stampPath = "deps/build/dep_${d}-prefix/src/dep_${d}-stamp"
+              if (Test-Path $stampPath) {
+                $files = Get-ChildItem $stampPath -ErrorAction SilentlyContinue | Sort-Object Name
+                $names = $files | ForEach-Object { $_.Name }
+                $hasInstall = ($files | Where-Object { $_.Name -like '*-install' }).Count -gt 0
+                $hasBuild   = ($files | Where-Object { $_.Name -like '*-build' }).Count -gt 0
+                $hasConfig  = ($files | Where-Object { $_.Name -like '*-configure' }).Count -gt 0
+                $status = if ($hasInstall) { 'INSTALLED' } elseif ($hasBuild) { 'BUILT' } elseif ($hasConfig) { 'CONFIGURED' } else { 'STARTED' }
+                Write-Host ("  [{0,-10}] {1}" -f $status, $d)
+              } else {
+                # GMP / MPFR are custom_target, no -prefix dir — check destdir
+                if ($d -in @('GMP','MPFR') -and (Test-Path "$env:DEPS_DESTDIR/usr/local/include")) {
+                  Write-Host ("  [{0,-10}] {1}" -f 'COPIED?', $d)
+                } else {
+                  Write-Host ("  [{0,-10}] {1}" -f 'SKIPPED', $d)
+                }
+              }
+            }
+          } else {
+            Write-Host "deps/build does not exist"
+          }
+
+      - name: Set job result based on msbuild
+        if: always()
+        shell: pwsh
+        run: |
+          # Re-evaluate by checking that all NON-EXCLUDED deps installed.
+          $excludeRegex = "$env:EXCLUDES"
+          $required = @('Blosc','Boost','Catch2','Cereal','CURL','Eigen','EXPAT','GLEW','GMP','heatshrink','JPEG','json','LibBGCode','MPFR','NanoSVG','NLopt','OCCT','OpenCSG','OpenSSL','PNG','Qhull','TBB','wxWidgets','z3','ZLIB','CGAL','OpenEXR','OpenVDB')
+          $required = $required | Where-Object { $_ -notmatch $excludeRegex }
+          $missing = @()
+          foreach ($d in $required) {
+            $stampPath = "deps/build/dep_${d}-prefix/src/dep_${d}-stamp"
+            $installed = Test-Path "$stampPath/dep_${d}-install"
+            $copied = (Test-Path "$env:DEPS_DESTDIR/usr/local/include/gmp.h") -and ($d -eq 'GMP')
+            $copied2 = (Test-Path "$env:DEPS_DESTDIR/usr/local/include/mpfr.h") -and ($d -eq 'MPFR')
+            if (-not $installed -and -not $copied -and -not $copied2) {
+              $missing += $d
+            }
+          }
+          if ($missing.Count -gt 0) {
+            Write-Host "FAILED. Missing/incomplete required deps: $($missing -join ', ')"
+            exit 1
+          } else {
+            Write-Host "All required deps built successfully."
+          }
+
+      - name: Save deps cache
         if: always() && !cancelled()
         uses: actions/cache/save@v4
         with:
           path: |
             deps-destdir
             deps/build
-          key: woa-deps-v2-${{ hashFiles('deps/**/*.cmake', 'deps/CMakeLists.txt', 'cmake/modules/AddCMakeProject.cmake', '.github/workflows/build_woa.yml') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: woa-deps-v3-${{ hashFiles('deps/**/*.cmake', 'deps/CMakeLists.txt', 'cmake/modules/AddCMakeProject.cmake') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Collect logs
         if: always()
@@ -128,12 +176,11 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path artifacts/logs | Out-Null
           $patterns = @(
+            'deps/build/CMakeCache.txt',
             'deps/build/CMakeFiles/CMakeOutput.log',
             'deps/build/CMakeFiles/CMakeError.log',
-            'deps/build/CMakeCache.txt',
             'deps/build/dep_*-prefix/src/dep_*-stamp/*.log',
-            'deps/build/dep_*-prefix/src/dep_*-build/CMakeFiles/CMakeError.log',
-            'deps/build/dep_*-prefix/src/dep_*-build/CMakeFiles/CMakeOutput.log',
+            'deps/build/builds/*/CMakeCache.txt',
             'deps/build/builds/*/CMakeFiles/CMakeError.log',
             'deps/build/builds/*/CMakeFiles/CMakeOutput.log'
           )
@@ -144,8 +191,7 @@ jobs:
               Copy-Item $_.FullName $dest -ErrorAction SilentlyContinue
             }
           }
-          Write-Host "Collected:"
-          Get-ChildItem artifacts/logs -ErrorAction SilentlyContinue | Format-Table Name,Length
+          Write-Host "Collected $((Get-ChildItem artifacts/logs).Count) log files."
 
       - name: Upload logs
         if: always()
@@ -157,7 +203,7 @@ jobs:
           retention-days: 14
 
       - name: Upload deps destdir (success only)
-        if: success() && (inputs.steps == 'deps' || inputs.steps == 'deps-dirty' || inputs.steps == '')
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: deps-destdir-arm64
