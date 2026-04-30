@@ -249,6 +249,30 @@ jobs:
       # App build (PrusaSlicer itself), reusing the deps we just built.
       # ------------------------------------------------------------------
 
+      - name: Neutralize CGAL with_sqrt header (ARM64 / no LEDA/CORE)
+        if: success()
+        shell: pwsh
+        run: |
+          # PrusaSlicer transitively includes
+          # CGAL/Exact_predicates_exact_constructions_kernel_with_sqrt.h via
+          # MeshBoolean.cpp's CGAL chain. That header hard-#errors when neither
+          # LEDA nor CORE is installed (we use Boost.Multiprecision via
+          # CGAL_DISABLE_GMP=ON). PrusaSlicer doesn't actually use the typedef
+          # the header would provide, so suppress the #error so the file is a
+          # no-op when transitively included.
+          $hdr = "$env:DEPS_DESTDIR\usr\local\include\CGAL\Exact_predicates_exact_constructions_kernel_with_sqrt.h"
+          if (Test-Path $hdr) {
+            $c = Get-Content -Raw $hdr
+            $patched = $c -replace '(?m)^#  error  "You need LEDA or CORE installed."', `
+              '/* WoA-PoC: PrusaSlicer does not use this typedef; #error suppressed. */'
+            if ($c -ne $patched) {
+              Set-Content -Path $hdr -Value $patched -NoNewline
+              Write-Host "Patched $hdr"
+            } else {
+              Write-Host "$hdr already patched (no #error to suppress)"
+            }
+          }
+
       - name: Mirror wxWidgets headers (idempotent)
         if: success()
         shell: pwsh

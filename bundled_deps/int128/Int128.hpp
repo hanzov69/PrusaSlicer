@@ -61,9 +61,12 @@
 	#define HAS_INTRINSIC_128_TYPE
 #endif
 
-#if defined(_MSC_VER) && defined(_WIN64)
+#if defined(_MSC_VER) && defined(_M_X64)
 	#include <intrin.h>
 	#pragma intrinsic(_mul128)
+#elif defined(_MSC_VER) && defined(_M_ARM64)
+	#include <intrin.h>
+	#pragma intrinsic(__mulh)
 #endif
 
 //------------------------------------------------------------------------------
@@ -197,11 +200,17 @@ public:
 
 	static inline Int128 multiply(int64_t lhs, int64_t rhs)
 	{
-#if defined(_MSC_VER) && defined(_WIN64)
-		// On Visual Studio 64bit, use the _mul128() intrinsic function.
+#if defined(_MSC_VER) && defined(_M_X64)
+		// On Visual Studio x86_64, use the _mul128() intrinsic.
 		Int128 result;
 	    result.m_lo = (uint64_t)_mul128(lhs, rhs, &result.m_hi);
 	    return result;
+#elif defined(_MSC_VER) && defined(_M_ARM64)
+		// On Visual Studio ARM64, compose: low 64 = regular mul, high 64 = __mulh.
+		Int128 result;
+		result.m_lo = (uint64_t)((int64_t)((uint64_t)lhs * (uint64_t)rhs));
+		result.m_hi = __mulh(lhs, rhs);
+		return result;
 #else
 	    // This branch should only be executed in case there is neither __int16 type nor _mul128 intrinsic
 	    // function available. This is mostly on 32bit operating systems.
