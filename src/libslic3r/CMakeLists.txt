@@ -16,9 +16,12 @@ if (MINGW)
     add_compile_options(-Wa,-mbig-obj)
 endif ()
 
-set(OpenVDBUtils_SOURCES "")
 if (TARGET OpenVDB::openvdb)
     set(OpenVDBUtils_SOURCES OpenVDBUtils.cpp OpenVDBUtils.hpp OpenVDBUtilsLegacy.hpp)
+else ()
+    # Compile stubs so libslic3r links cleanly even without OpenVDB. SLA hollow
+    # generation and CSG voxelization will throw at runtime in this config.
+    set(OpenVDBUtils_SOURCES OpenVDBUtilsStub.cpp OpenVDBUtils.hpp)
 endif()
 
 find_package(LibBGCode REQUIRED COMPONENTS Convert)
