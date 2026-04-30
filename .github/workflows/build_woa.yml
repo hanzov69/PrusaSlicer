@@ -271,9 +271,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: build-app
-          key: woa-app-v1-${{ hashFiles('CMakeLists.txt', 'src/CMakeLists.txt', 'src/libslic3r/CMakeLists.txt') }}
+          key: woa-app-v2-${{ hashFiles('CMakeLists.txt', 'src/CMakeLists.txt', 'src/libslic3r/CMakeLists.txt', 'cmake/modules/**') }}
           restore-keys: |
-            woa-app-v1-
+            woa-app-v2-
 
       - name: Configure app
         if: success()
@@ -318,7 +318,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: build-app
-          key: woa-app-v1-${{ hashFiles('CMakeLists.txt', 'src/CMakeLists.txt', 'src/libslic3r/CMakeLists.txt') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: woa-app-v2-${{ hashFiles('CMakeLists.txt', 'src/CMakeLists.txt', 'src/libslic3r/CMakeLists.txt', 'cmake/modules/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Collect app build logs
         if: always()
