@@ -346,7 +346,17 @@ if(WIN32)
     add_definitions(-D_USE_MATH_DEFINES -D_WIN32 -D_CRT_SECURE_NO_WARNINGS -D_SCL_SECURE_NO_WARNINGS)
     if(MSVC)
         # BOOST_ALL_NO_LIB: Avoid the automatic linking of Boost libraries on Windows. Rather rely on explicit linking.
-        add_definitions(-DBOOST_ALL_NO_LIB -DBOOST_USE_WINAPI_VERSION=0x601 -DBOOST_SYSTEM_USE_UTF8 )
+        # WINAPI version: Boost.Log encodes the target Windows version into its
+        # version-namespace (e.g. v2s_mt_nt6 for Win7=0x601, v2s_mt_nt62 for
+        # Win8=0x602). On ARM64 (which only exists since Win10), the deps build
+        # links Boost.Log against the Win8 namespace, so the consumer must
+        # match — otherwise libslic3r references symbols that don't exist in
+        # the built Boost.Log static lib.
+        if (CMAKE_GENERATOR_PLATFORM STREQUAL "ARM64")
+            add_definitions(-DBOOST_ALL_NO_LIB -DBOOST_USE_WINAPI_VERSION=0x602 -DBOOST_SYSTEM_USE_UTF8 )
+        else ()
+            add_definitions(-DBOOST_ALL_NO_LIB -DBOOST_USE_WINAPI_VERSION=0x601 -DBOOST_SYSTEM_USE_UTF8 )
+        endif ()
         # Force the source code encoding to UTF-8. See PrusaSlicer GH pull request #5583
         add_compile_options("$<$<C_COMPILER_ID:MSVC>:/utf-8>")
         add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
