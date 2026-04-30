@@ -481,6 +481,18 @@ if (SLIC3R_STATIC AND NOT SLIC3R_STATIC_EXCLUDE_GLEW)
 endif()
 
 find_package(GLEW REQUIRED)
+# The glew-cmake fork (used on Windows-on-ARM) exports `libglew_static` rather
+# than the canonical `GLEW::GLEW`. Provide the alias so downstream targets in
+# this project can keep linking to GLEW::GLEW unchanged.
+if (NOT TARGET GLEW::GLEW)
+    foreach(_glew_alt libglew_static libglew_shared glew_s glew)
+        if (TARGET ${_glew_alt})
+            add_library(GLEW::GLEW ALIAS ${_glew_alt})
+            message(STATUS "Aliased GLEW::GLEW -> ${_glew_alt}")
+            break()
+        endif()
+    endforeach()
+endif()
 
 # Find the Cereal serialization library
 find_package(cereal REQUIRED)
