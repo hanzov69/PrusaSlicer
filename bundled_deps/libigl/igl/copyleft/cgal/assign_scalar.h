@@ -43,6 +43,7 @@ namespace igl
         const float& c,
         double& d);
 
+#if defined(CGAL_USE_LEDA) || defined(CGAL_USE_CORE)
       IGL_INLINE void assign_scalar(
         const CGAL::Exact_predicates_exact_constructions_kernel_with_sqrt::FT & cgal,
         CGAL::Exact_predicates_exact_constructions_kernel_with_sqrt::FT & d);
@@ -52,6 +53,7 @@ namespace igl
       IGL_INLINE void assign_scalar(
         const CGAL::Exact_predicates_exact_constructions_kernel_with_sqrt::FT & cgal,
         float& d);
+#endif
 
 #ifndef WIN32
       IGL_INLINE void assign_scalar(

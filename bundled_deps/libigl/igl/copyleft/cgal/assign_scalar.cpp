@@ -65,6 +65,11 @@ IGL_INLINE void igl::copyleft::cgal::assign_scalar(
   d = c;
 }
 
+// The Exact_predicates_exact_constructions_kernel_with_sqrt typedef is only
+// available when CGAL is built against LEDA or CORE. With CGAL_DISABLE_GMP=ON
+// (Boost.Multiprecision backend), neither is present and these overloads must
+// be elided so the file still compiles.
+#if defined(CGAL_USE_LEDA) || defined(CGAL_USE_CORE)
 IGL_INLINE void igl::copyleft::cgal::assign_scalar(
   const CGAL::Exact_predicates_exact_constructions_kernel_with_sqrt::FT & cgal,
   CGAL::Exact_predicates_exact_constructions_kernel_with_sqrt::FT & d)
@@ -97,6 +102,7 @@ IGL_INLINE void igl::copyleft::cgal::assign_scalar(
       d = next;
   } while (d < float(interval.second));
 }
+#endif
 
 #ifndef WIN32
 
