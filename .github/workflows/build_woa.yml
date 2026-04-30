@@ -263,7 +263,7 @@ jobs:
           $hdr = "$env:DEPS_DESTDIR\usr\local\include\CGAL\Exact_predicates_exact_constructions_kernel_with_sqrt.h"
           if (Test-Path $hdr) {
             $c = Get-Content -Raw $hdr
-            $patched = $c -replace '(?m)^#  error  "You need LEDA or CORE installed."', `
+            $patched = $c -replace '(?m)^#  error "You need LEDA or CORE installed."', `
               '/* WoA-PoC: PrusaSlicer does not use this typedef; #error suppressed. */'
             if ($c -ne $patched) {
               Set-Content -Path $hdr -Value $patched -NoNewline
