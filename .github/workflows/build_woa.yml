@@ -273,6 +273,30 @@ jobs:
             }
           }
 
+      - name: Mirror Boost libs to arm64-tagged names
+        if: success()
+        shell: pwsh
+        run: |
+          # Boost 1.85's CMake names the static libs `libboost_*-vc144-mt-x64-*.lib`
+          # even when targeting ARM64 (Boost's install logic doesn't recognize
+          # the ARM64 platform tag). MSVC's auto-link pragmas in Boost headers
+          # use `_M_ARM64` to derive the arch tag, so they look for `*-arm64-*`
+          # libs. Mirror each x64-tagged lib to the matching arm64 name so the
+          # auto-link succeeds.
+          $libdir = "$env:DEPS_DESTDIR\usr\local\lib"
+          if (Test-Path $libdir) {
+            $count = 0
+            Get-ChildItem "$libdir\libboost_*-x64-*.lib" -ErrorAction SilentlyContinue | ForEach-Object {
+              $arm = $_.Name -replace '-x64-', '-arm64-'
+              $dst = Join-Path $libdir $arm
+              if (-not (Test-Path $dst)) {
+                Copy-Item $_.FullName $dst
+                $count++
+              }
+            }
+            Write-Host "Mirrored $count Boost libs (x64 -> arm64 tag)"
+          }
+
       - name: Mirror wxWidgets headers (idempotent)
         if: success()
         shell: pwsh
