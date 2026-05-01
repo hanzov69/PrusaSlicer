@@ -421,16 +421,26 @@ jobs:
           # The PrusaSlicer build's prusaslicer_copy_dlls() only copies GMP/MPFR
           # (and we don't use those on ARM64). EXPAT is built as a DLL for the
           # WoA build so wxbase32u_xml's __imp_XML_* refs resolve, which means
-          # libexpat.dll has to ship alongside prusa-slicer.exe. Grab any other
-          # runtime DLLs sitting in deps-destdir/usr/local/bin too — except the
-          # MSVC runtime DLLs, which the user's vcredist provides.
+          # libexpat.dll has to ship alongside prusa-slicer.exe.
+          #
+          # We also bundle the MSVC runtime DLLs side-by-side (matching what
+          # upstream's x64 zip does), so the app works even if the user's
+          # ARM64 vcredist install is missing or broken. wxWidgets's install
+          # incorrectly copies an x86-64 vcruntime140_1.dll into bin/, so we
+          # filter on the actual PE Machine field and only ship ARM64 binaries.
           $src = "$env:DEPS_DESTDIR\usr\local\bin"
           $dst = "build-app\src\RelWithDebInfo"
           if ((Test-Path $src) -and (Test-Path $dst)) {
             Get-ChildItem $src -Filter *.dll -ErrorAction SilentlyContinue | ForEach-Object {
-              if ($_.Name -notmatch '^(msvcp140|vcruntime140|concrt140)') {
+              # Read PE Machine field to verify ARM64 (0xAA64).
+              $bytes = [System.IO.File]::ReadAllBytes($_.FullName)
+              $peOff = [BitConverter]::ToInt32($bytes, 0x3C)
+              $machine = [BitConverter]::ToUInt16($bytes, $peOff + 4)
+              if ($machine -eq 0xAA64) {
                 Copy-Item $_.FullName $dst -Force
                 Write-Host "Staged $($_.Name)"
+              } else {
+                Write-Host ("Skipped {0} (wrong Machine: 0x{1:X4})" -f $_.Name, $machine)
               }
             }
           }
