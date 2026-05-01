@@ -2,6 +2,12 @@ set(_srcdir ${CMAKE_CURRENT_LIST_DIR}/mpfr)
 set(_dstdir ${${PROJECT_NAME}_DEP_INSTALL_PREFIX})
 
 if (MSVC)
+    if (CMAKE_GENERATOR_PLATFORM STREQUAL "ARM64")
+        set(_mpfr_lib_subdir winarm64)
+    else ()
+        set(_mpfr_lib_subdir win${DEPS_BITS})
+    endif ()
+
     set(_output  ${_dstdir}/include/mpfr.h
                  ${_dstdir}/include/mpf2mpfr.h
                  ${_dstdir}/lib/libmpfr-4.lib
@@ -11,8 +17,8 @@ if (MSVC)
         OUTPUT  ${_output}
         COMMAND ${CMAKE_COMMAND} -E copy ${_srcdir}/include/mpfr.h ${_dstdir}/include/
         COMMAND ${CMAKE_COMMAND} -E copy ${_srcdir}/include/mpf2mpfr.h ${_dstdir}/include/
-        COMMAND ${CMAKE_COMMAND} -E copy ${_srcdir}/lib/win${DEPS_BITS}/libmpfr-4.lib ${_dstdir}/lib/
-        COMMAND ${CMAKE_COMMAND} -E copy ${_srcdir}/lib/win${DEPS_BITS}/libmpfr-4.dll ${_dstdir}/bin/
+        COMMAND ${CMAKE_COMMAND} -E copy ${_srcdir}/lib/${_mpfr_lib_subdir}/libmpfr-4.lib ${_dstdir}/lib/
+        COMMAND ${CMAKE_COMMAND} -E copy ${_srcdir}/lib/${_mpfr_lib_subdir}/libmpfr-4.dll ${_dstdir}/bin/
     )
 
     add_custom_target(dep_MPFR SOURCES ${_output})

@@ -37,7 +37,7 @@ jobs:
       CMAKE_GENERATOR: Visual Studio 17 2022
       CMAKE_GENERATOR_PLATFORM: ARM64
       CMAKE_BUILD_PARALLEL_LEVEL: 4
-      EXCLUDES: ${{ inputs.excludes || 'GMP|MPFR' }}
+      EXCLUDES: ${{ inputs.excludes || '' }}
 
     steps:
       - name: Checkout
@@ -77,6 +77,52 @@ jobs:
           Write-Host "VS root: $vsroot"
           Get-PSDrive -PSProvider FileSystem | Format-Table Name,@{n='Free(GB)';e={[math]::Round($_.Free/1GB,1)}}
 
+      - name: Stage ARM64 GMP/MPFR via vcpkg
+        shell: pwsh
+        run: |
+          # PrusaSlicer's deps/+GMP and deps/+MPFR vendor x86-64 prebuilt DLLs
+          # under lib/win64/. For Windows-on-ARM, build GMP+MPFR from vcpkg's
+          # arm64-windows triplet and stage them under lib/winarm64/ so the
+          # GMP.cmake/MPFR.cmake copy logic finds the right architecture.
+          $vcpkgRoot = "C:\vcpkg"
+          if (-not (Test-Path "$vcpkgRoot\vcpkg.exe")) {
+            Write-Host "Bootstrapping vcpkg..."
+            git clone --depth=1 https://github.com/microsoft/vcpkg $vcpkgRoot
+            & "$vcpkgRoot\bootstrap-vcpkg.bat" -disableMetrics
+          }
+          # Install dynamic-CRT GMP+MPFR for ARM64. Default arm64-windows triplet
+          # produces shared libs (.dll + import .lib), matching PrusaSlicer's
+          # existing libgmp-10.dll / libgmp-10.lib naming after rename below.
+          & "$vcpkgRoot\vcpkg.exe" install gmp:arm64-windows mpfr:arm64-windows
+          if ($LASTEXITCODE -ne 0) { throw "vcpkg install failed (rc=$LASTEXITCODE)" }
+
+          $installed = "$vcpkgRoot\installed\arm64-windows"
+          if (-not (Test-Path "$installed\bin\gmp.dll")) {
+            Get-ChildItem $installed -Recurse | Select-Object FullName | Format-Table -AutoSize
+            throw "vcpkg-installed gmp.dll not found at expected path"
+          }
+
+          # Stage GMP into deps/+GMP/gmp/lib/winarm64/ as libgmp-10.{dll,lib}
+          $gmpStage = "deps\+GMP\gmp\lib\winarm64"
+          New-Item -ItemType Directory -Force -Path $gmpStage | Out-Null
+          Copy-Item "$installed\bin\gmp.dll" "$gmpStage\libgmp-10.dll" -Force
+          Copy-Item "$installed\lib\gmp.lib" "$gmpStage\libgmp-10.lib" -Force
+          Copy-Item "$installed\include\gmp.h"   "deps\+GMP\gmp\include\gmp.h"   -Force
+
+          # Stage MPFR into deps/+MPFR/mpfr/lib/winarm64/
+          $mpfrStage = "deps\+MPFR\mpfr\lib\winarm64"
+          New-Item -ItemType Directory -Force -Path $mpfrStage | Out-Null
+          Copy-Item "$installed\bin\mpfr.dll" "$mpfrStage\libmpfr-4.dll" -Force
+          Copy-Item "$installed\lib\mpfr.lib" "$mpfrStage\libmpfr-4.lib" -Force
+          Copy-Item "$installed\include\mpfr.h"     "deps\+MPFR\mpfr\include\mpfr.h"     -Force
+          if (Test-Path "$installed\include\mpf2mpfr.h") {
+            Copy-Item "$installed\include\mpf2mpfr.h" "deps\+MPFR\mpfr\include\mpf2mpfr.h" -Force
+          }
+
+          Write-Host "Staged ARM64 GMP/MPFR:"
+          Get-ChildItem "deps\+GMP\gmp\lib\winarm64", "deps\+MPFR\mpfr\lib\winarm64" |
+            Format-Table FullName, Length
+
       - name: Restore deps cache
         id: deps-cache-restore
         if: ${{ !inputs.reset_cache }}
@@ -97,10 +143,10 @@ jobs:
           # GLEW fork swap), CMake's per-build CMakeCache.txt records the old
           # source path and refuses to reconfigure. Force-clean those subtrees
           # so ExternalProject re-fetches and re-configures from scratch.
-          # Scrub deps whose source layout, URL, or patch contents changed since
-          # the cache was last saved (stale CMakeCache.txt would refuse to
-          # reconfigure; stale ExternalProject stamps would skip re-patch).
-          $scrub = @('OpenEXR','OpenVDB')
+          # Scrub deps whose source layout, URL, patch contents, or downstream
+          # configure flags changed since the cache was last saved.
+          # CGAL: previously built with CGAL_DISABLE_GMP=ON; now linking real GMP/MPFR.
+          $scrub = @('CGAL')
           foreach ($d in $scrub) {
             foreach ($p in @("deps/build/dep_${d}-prefix", "deps/build/builds/$d", "deps/build/dep_${d}.dir")) {
               if (Test-Path $p) {
@@ -320,9 +366,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: build-app
-          key: woa-app-v3-${{ hashFiles('CMakeLists.txt', 'src/CMakeLists.txt', 'src/libslic3r/CMakeLists.txt', 'cmake/modules/**') }}
+          key: woa-app-v4-${{ hashFiles('CMakeLists.txt', 'src/CMakeLists.txt', 'src/libslic3r/CMakeLists.txt', 'cmake/modules/**') }}
           restore-keys: |
-            woa-app-v3-
+            woa-app-v4-
 
       - name: Configure app
         if: success()
@@ -341,7 +387,6 @@ jobs:
             -DCMAKE_BUILD_TYPE=RelWithDebInfo ^
             -DCMAKE_CONFIGURATION_TYPES=RelWithDebInfo ^
             -DCMAKE_PREFIX_PATH="%DEPS_DESTDIR%\usr\local" ^
-            -DCGAL_DISABLE_GMP=ON ^
             -DSLIC3R_PCH=ON ^
             -DSLIC3R_BUILD_TESTS=OFF ^
             -DSLIC3R_GUI=1
@@ -370,7 +415,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: build-app
-          key: woa-app-v3-${{ hashFiles('CMakeLists.txt', 'src/CMakeLists.txt', 'src/libslic3r/CMakeLists.txt', 'cmake/modules/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: woa-app-v4-${{ hashFiles('CMakeLists.txt', 'src/CMakeLists.txt', 'src/libslic3r/CMakeLists.txt', 'cmake/modules/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Collect app build logs
         if: always()
