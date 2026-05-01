@@ -320,9 +320,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: build-app
-          key: woa-app-v2-${{ hashFiles('CMakeLists.txt', 'src/CMakeLists.txt', 'src/libslic3r/CMakeLists.txt', 'cmake/modules/**') }}
+          key: woa-app-v3-${{ hashFiles('CMakeLists.txt', 'src/CMakeLists.txt', 'src/libslic3r/CMakeLists.txt', 'cmake/modules/**') }}
           restore-keys: |
-            woa-app-v2-
+            woa-app-v3-
 
       - name: Configure app
         if: success()
@@ -334,9 +334,12 @@ jobs:
           call "%VSROOT%\Common7\Tools\vsdevcmd.bat" -arch=arm64 -host_arch=arm64 -app_platform=Desktop || exit /b 1
 
           if not exist build-app mkdir build-app
+          REM CMAKE_CONFIGURATION_TYPES omits "Debug" so PrusaSlicer's bundled
+          REM FindOpenVDB.cmake doesn't require a debug-build OpenVDB lib.
           cmake.exe -S . -B build-app -G "Visual Studio 17 2022" -A ARM64 ^
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ^
             -DCMAKE_BUILD_TYPE=RelWithDebInfo ^
+            -DCMAKE_CONFIGURATION_TYPES=RelWithDebInfo ^
             -DCMAKE_PREFIX_PATH="%DEPS_DESTDIR%\usr\local" ^
             -DCGAL_DISABLE_GMP=ON ^
             -DSLIC3R_PCH=ON ^
@@ -367,7 +370,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: build-app
-          key: woa-app-v2-${{ hashFiles('CMakeLists.txt', 'src/CMakeLists.txt', 'src/libslic3r/CMakeLists.txt', 'cmake/modules/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: woa-app-v3-${{ hashFiles('CMakeLists.txt', 'src/CMakeLists.txt', 'src/libslic3r/CMakeLists.txt', 'cmake/modules/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Collect app build logs
         if: always()
