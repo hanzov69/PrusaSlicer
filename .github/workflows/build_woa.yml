@@ -394,6 +394,26 @@ jobs:
           path: artifacts/app-logs
           if-no-files-found: warn
 
+      - name: Stage Mesa llvmpipe (ARM64) for --sw-renderer
+        if: success() && steps.build-app.outputs.build_rc == '0'
+        shell: pwsh
+        run: |
+          # PrusaSlicer's --sw-renderer flag LoadLibrary()s <exe-dir>/mesa/opengl32.dll.
+          # Use mmozeiko/build-mesa's ARM64 llvmpipe build (a pure software OpenGL
+          # implementation) so software rendering works on machines without a
+          # GPU OpenGL >=3.2 driver.
+          $url = "https://github.com/mmozeiko/build-mesa/releases/download/26.0.6/mesa-llvmpipe-arm64-26.0.6.7z"
+          $z = "$env:RUNNER_TEMP\mesa.7z"
+          $stage = "$env:RUNNER_TEMP\mesa-extract"
+          Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $z
+          # Use 7z if available, else tar/bsdtar (Win 11 ships bsdtar that handles 7z)
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          tar -xf $z -C $stage
+          $dst = "build-app\src\RelWithDebInfo\mesa"
+          New-Item -ItemType Directory -Force -Path $dst | Out-Null
+          Copy-Item "$stage\opengl32.dll" $dst -Force
+          Write-Host "Staged Mesa llvmpipe opengl32.dll for --sw-renderer"
+
       - name: Stage runtime DLLs from deps next to the binaries
         if: success() && steps.build-app.outputs.build_rc == '0'
         shell: pwsh
@@ -424,6 +444,7 @@ jobs:
             build-app/src/RelWithDebInfo/*.exe
             build-app/src/RelWithDebInfo/*.dll
             build-app/src/RelWithDebInfo/*.pdb
+            build-app/src/RelWithDebInfo/mesa/**
           if-no-files-found: warn
           retention-days: 14
 
