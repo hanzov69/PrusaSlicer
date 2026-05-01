@@ -9,7 +9,7 @@ on:
         type: boolean
       excludes:
         description: 'Regex of deps to exclude'
-        default: 'OpenEXR|OpenVDB|GMP|MPFR'
+        default: 'GMP|MPFR'
         type: string
       upstream_ref:
         description: 'Upstream ref/SHA to check out (blank = current branch tip)'
@@ -37,7 +37,7 @@ jobs:
       CMAKE_GENERATOR: Visual Studio 17 2022
       CMAKE_GENERATOR_PLATFORM: ARM64
       CMAKE_BUILD_PARALLEL_LEVEL: 4
-      EXCLUDES: ${{ inputs.excludes || 'OpenEXR|OpenVDB|GMP|MPFR' }}
+      EXCLUDES: ${{ inputs.excludes || 'GMP|MPFR' }}
 
     steps:
       - name: Checkout
