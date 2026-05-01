@@ -394,6 +394,27 @@ jobs:
           path: artifacts/app-logs
           if-no-files-found: warn
 
+      - name: Stage runtime DLLs from deps next to the binaries
+        if: success() && steps.build-app.outputs.build_rc == '0'
+        shell: pwsh
+        run: |
+          # The PrusaSlicer build's prusaslicer_copy_dlls() only copies GMP/MPFR
+          # (and we don't use those on ARM64). EXPAT is built as a DLL for the
+          # WoA build so wxbase32u_xml's __imp_XML_* refs resolve, which means
+          # libexpat.dll has to ship alongside prusa-slicer.exe. Grab any other
+          # runtime DLLs sitting in deps-destdir/usr/local/bin too — except the
+          # MSVC runtime DLLs, which the user's vcredist provides.
+          $src = "$env:DEPS_DESTDIR\usr\local\bin"
+          $dst = "build-app\src\RelWithDebInfo"
+          if ((Test-Path $src) -and (Test-Path $dst)) {
+            Get-ChildItem $src -Filter *.dll -ErrorAction SilentlyContinue | ForEach-Object {
+              if ($_.Name -notmatch '^(msvcp140|vcruntime140|concrt140)') {
+                Copy-Item $_.FullName $dst -Force
+                Write-Host "Staged $($_.Name)"
+              }
+            }
+          }
+
       - name: Upload PrusaSlicer ARM64 binaries
         if: success() && steps.build-app.outputs.build_rc == '0'
         uses: actions/upload-artifact@v4
