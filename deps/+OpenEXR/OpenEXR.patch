@@ -23,8 +23,20 @@
 @@ -40,6 +40,7 @@
  //
  //-----------------------------------------------------------------------------
- 
+
 +#include <cstdint>
  #include <ImfMisc.h>
  #include <ImfHeader.h>
  #include <ImfAttribute.h>
+--- ../OpenEXR-orig/OpenEXR/IlmImf/ImfSimd.h	2021-02-12 17:56:19.000000000 +0100
++++ ./OpenEXR/IlmImf/ImfSimd.h	2023-06-01 13:22:30.000000000 +0200
+@@ -45,7 +45,9 @@
+
+
+ // GCC and Visual Studio SSE2 compiler flags
+-#if defined __SSE2__ || (_MSC_VER >= 1300 && !_M_CEE_PURE)
++// WoA-PoC: also require an actual x86/x64 target arch — MSVC's emmintrin.h
++// rejects the include on ARM64, even though _MSC_VER >= 1300.
++#if (defined __SSE2__ || (_MSC_VER >= 1300 && !_M_CEE_PURE)) && (defined(_M_X64) || defined(_M_IX86) || defined(__x86_64__) || defined(__i386__))
+     #define IMF_HAVE_SSE2 1
+ #endif
