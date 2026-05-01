@@ -97,9 +97,10 @@ jobs:
           # GLEW fork swap), CMake's per-build CMakeCache.txt records the old
           # source path and refuses to reconfigure. Force-clean those subtrees
           # so ExternalProject re-fetches and re-configures from scratch.
-          # Empty unless a dep's source layout/URL just changed and its build dir
-          # holds a stale CMakeCache that would refuse to reconfigure.
-          $scrub = @()
+          # Scrub deps whose source layout, URL, or patch contents changed since
+          # the cache was last saved (stale CMakeCache.txt would refuse to
+          # reconfigure; stale ExternalProject stamps would skip re-patch).
+          $scrub = @('OpenEXR','OpenVDB')
           foreach ($d in $scrub) {
             foreach ($p in @("deps/build/dep_${d}-prefix", "deps/build/builds/$d", "deps/build/dep_${d}.dir")) {
               if (Test-Path $p) {
