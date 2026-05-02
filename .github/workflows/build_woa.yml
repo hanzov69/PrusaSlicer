@@ -97,24 +97,24 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "vcpkg install failed (rc=$LASTEXITCODE)" }
 
           $installed = "$vcpkgRoot\installed\arm64-windows"
-          if (-not (Test-Path "$installed\bin\gmp.dll")) {
+          if (-not (Test-Path "$installed\bin\gmp-10.dll")) {
             Get-ChildItem $installed -Recurse | Select-Object FullName | Format-Table -AutoSize
-            throw "vcpkg-installed gmp.dll not found at expected path"
+            throw "vcpkg-installed gmp-10.dll not found at expected path"
           }
 
-          # Stage GMP into deps/+GMP/gmp/lib/winarm64/ as libgmp-10.{dll,lib}
+          # Stage GMP into deps/+GMP/gmp/lib/winarm64/ keeping vcpkg's names.
           $gmpStage = "deps\+GMP\gmp\lib\winarm64"
           New-Item -ItemType Directory -Force -Path $gmpStage | Out-Null
-          Copy-Item "$installed\bin\gmp.dll" "$gmpStage\libgmp-10.dll" -Force
-          Copy-Item "$installed\lib\gmp.lib" "$gmpStage\libgmp-10.lib" -Force
-          Copy-Item "$installed\include\gmp.h"   "deps\+GMP\gmp\include\gmp.h"   -Force
+          Copy-Item "$installed\bin\gmp-10.dll" "$gmpStage\gmp-10.dll" -Force
+          Copy-Item "$installed\lib\gmp.lib"    "$gmpStage\gmp.lib"    -Force
+          Copy-Item "$installed\include\gmp.h"  "deps\+GMP\gmp\include\gmp.h" -Force
 
-          # Stage MPFR into deps/+MPFR/mpfr/lib/winarm64/
+          # Stage MPFR into deps/+MPFR/mpfr/lib/winarm64/.
           $mpfrStage = "deps\+MPFR\mpfr\lib\winarm64"
           New-Item -ItemType Directory -Force -Path $mpfrStage | Out-Null
-          Copy-Item "$installed\bin\mpfr.dll" "$mpfrStage\libmpfr-4.dll" -Force
-          Copy-Item "$installed\lib\mpfr.lib" "$mpfrStage\libmpfr-4.lib" -Force
-          Copy-Item "$installed\include\mpfr.h"     "deps\+MPFR\mpfr\include\mpfr.h"     -Force
+          Copy-Item "$installed\bin\mpfr-6.dll" "$mpfrStage\mpfr-6.dll" -Force
+          Copy-Item "$installed\lib\mpfr.lib"   "$mpfrStage\mpfr.lib"   -Force
+          Copy-Item "$installed\include\mpfr.h" "deps\+MPFR\mpfr\include\mpfr.h" -Force
           if (Test-Path "$installed\include\mpf2mpfr.h") {
             Copy-Item "$installed\include\mpf2mpfr.h" "deps\+MPFR\mpfr\include\mpf2mpfr.h" -Force
           }

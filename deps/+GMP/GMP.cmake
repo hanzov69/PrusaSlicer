@@ -3,24 +3,28 @@ set(_srcdir ${CMAKE_CURRENT_LIST_DIR}/gmp)
 set(_dstdir ${${PROJECT_NAME}_DEP_INSTALL_PREFIX})
 
 if (MSVC)
-    # Pre-built GMP binaries vendored in lib/win<bits>/ (x64 by default).
-    # On Windows-on-ARM, the workflow stages vcpkg-built ARM64 GMP into
-    # lib/winarm64/ before deps configure runs.
+    # Pre-built GMP binaries vendored under lib/win<bits>/ (MinGW-style names
+    # on x64). On Windows-on-ARM, the workflow stages vcpkg-built ARM64 GMP
+    # into lib/winarm64/ keeping vcpkg's MSVC-style names (gmp-10.dll, gmp.lib).
     if (CMAKE_GENERATOR_PLATFORM STREQUAL "ARM64")
         set(_gmp_lib_subdir winarm64)
+        set(_gmp_lib_name gmp)        # gmp.lib
+        set(_gmp_dll_name gmp-10)     # gmp-10.dll
     else ()
         set(_gmp_lib_subdir win${DEPS_BITS})
+        set(_gmp_lib_name libgmp-10)
+        set(_gmp_dll_name libgmp-10)
     endif ()
 
     set(_output  ${_dstdir}/include/gmp.h
-                 ${_dstdir}/lib/libgmp-10.lib
-                 ${_dstdir}/bin/libgmp-10.dll)
+                 ${_dstdir}/lib/${_gmp_lib_name}.lib
+                 ${_dstdir}/bin/${_gmp_dll_name}.dll)
 
     add_custom_command(
         OUTPUT  ${_output}
         COMMAND ${CMAKE_COMMAND} -E copy ${_srcdir}/include/gmp.h ${_dstdir}/include/
-        COMMAND ${CMAKE_COMMAND} -E copy ${_srcdir}/lib/${_gmp_lib_subdir}/libgmp-10.lib ${_dstdir}/lib/
-        COMMAND ${CMAKE_COMMAND} -E copy ${_srcdir}/lib/${_gmp_lib_subdir}/libgmp-10.dll ${_dstdir}/bin/
+        COMMAND ${CMAKE_COMMAND} -E copy ${_srcdir}/lib/${_gmp_lib_subdir}/${_gmp_lib_name}.lib ${_dstdir}/lib/
+        COMMAND ${CMAKE_COMMAND} -E copy ${_srcdir}/lib/${_gmp_lib_subdir}/${_gmp_dll_name}.dll ${_dstdir}/bin/
     )
 
     add_custom_target(dep_GMP SOURCES ${_output})
